@@ -26,13 +26,15 @@ using namespace std;
 
 typedef int (*t_TestCaseCallback)(void);
 
+extern int SQLiteCppTest(void);
+
+
 static map<string, t_TestCaseCallback> g_HashMapTestCaseCallbackList;
 
 /*===================== Test Cases ==============================*/
-static int Test1(void)
+static int TestSQLiteCppMdule(void)
 {
-    cout << "calling "<<__func__<<"\n";
-    return 0;
+    return SQLiteCppTest();
 }
 
 static int Test2(void)
@@ -50,7 +52,7 @@ static int hello(void)
 
 static void InitTestCaseList(void)
 {
-    ADD_TEST_CASE(Test1);
+    ADD_TEST_CASE(TestSQLiteCppMdule);
     ADD_TEST_CASE(Test2);
     ADD_TEST_CASE(hello);
 }
