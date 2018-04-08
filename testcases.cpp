@@ -26,7 +26,7 @@ using namespace std;
 
 typedef int (*t_TestCaseCallback)(void);
 
-map<string, t_TestCaseCallback> g_HashMapTestCaseCallbackList;
+static map<string, t_TestCaseCallback> g_HashMapTestCaseCallbackList;
 
 /*===================== Test Cases ==============================*/
 static int Test1(void)
@@ -64,23 +64,23 @@ static void ListOutTestCases(void)
         cout << " " << ++count << ". " << it->first << '\n';
 }
 
-int main(int argc, char **argv)
+void RunTestCases(char *p_cmd)
 {
     InitTestCaseList();
 
-    if (argc == 1) {
+    if (p_cmd == NULL) {
         ListOutTestCases();
-        return 0;
+        return;
     }
 
     int status = 0;
     t_TestCaseCallback testCase = NULL;
-    if(strcmp(argv[1],"all") == 0) {
+    if(strcmp(p_cmd,"all") == 0) {
         int count = 0, passed = 0;
 
         cout<< "\tTest cases are starting...\n";
         for (map<string, t_TestCaseCallback>::iterator it=g_HashMapTestCaseCallbackList.begin();
-            it != g_HashMapTestCaseCallbackList.end(); ++it) {
+                it != g_HashMapTestCaseCallbackList.end(); ++it) {
             cout << "\n " << ++count << ". Executing testcase : " << it->first << '\n';
             cout << "-----------------------------------------------------\n";
             testCase = it->second;
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
         cout<< "\n\tTotal testcases passed : " << passed << "/" <<count << "\n";
     }
     else {
-        map<string, t_TestCaseCallback>::iterator it = g_HashMapTestCaseCallbackList.find(argv[1]);
+        map<string, t_TestCaseCallback>::iterator it = g_HashMapTestCaseCallbackList.find(p_cmd);
         if ( it != g_HashMapTestCaseCallbackList.end()) {
             cout << "\n\tExecuting testcase : " << it->first << '\n';
             cout << "-----------------------------------------------------\n";
@@ -104,10 +104,8 @@ int main(int argc, char **argv)
             cout << "\t Testcase - " << it->first << " : " << ((status)?"FAILED!!": "PASSED") << "\n";
         }
         else {
-            cout << "Error: Testcase \"" << argv[1] << "\"  not found. Please refer to below list:\n";
+            cout << "Error: Testcase \"" << p_cmd << "\"  not found. Please refer to below list:\n";
             ListOutTestCases();
         }
     }
-
-    return 0;
 }
