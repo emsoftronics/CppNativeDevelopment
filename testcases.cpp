@@ -32,7 +32,7 @@ extern int SQLiteCppTest(void);
 static map<string, t_TestCaseCallback> g_HashMapTestCaseCallbackList;
 
 /*===================== Test Cases ==============================*/
-static int TestSQLiteCppMdule(void)
+static int TestSQLiteCpp(void)
 {
     return SQLiteCppTest();
 }
@@ -52,7 +52,7 @@ static int hello(void)
 
 static void InitTestCaseList(void)
 {
-    ADD_TEST_CASE(TestSQLiteCppMdule);
+    ADD_TEST_CASE(TestSQLiteCpp);
     ADD_TEST_CASE(Test2);
     ADD_TEST_CASE(hello);
 }
