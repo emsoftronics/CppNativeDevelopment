@@ -24,6 +24,8 @@ extern "C" {
 #include <pthread.h>
 };
 
+#define CLIENT_QUEUE_LEN    50
+
 using namespace std;
 namespace server {
 
@@ -36,12 +38,16 @@ namespace server {
             ~SocketServer(void);
 
             int start(void);
-            int resume(void);
-            int pause(void);
-            int stop(void);
+            void resume(void);
+            void pause(void);
+            void stop(void);
+            int getFd(void);
+            bool isRunning(void);
+            bool isPaused(void);
 
         private:
-            static void *ServiceThread(void *arg);
+            static void *serviceThread(void *arg);
+            bool catchPauseAndResumeEvents(void);
 
         private:
             int mSocketFd;
@@ -50,6 +56,8 @@ namespace server {
             int mSocketType;
             int mCommType;
             int mProtocol;
+            bool mRunning;
+            bool mThreadJoined;
             pthread_t mListeningThread;
             pthread_mutex_t mThreadMutex;
             sem_t mSem;
