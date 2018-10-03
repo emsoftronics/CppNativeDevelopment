@@ -31,6 +31,7 @@ extern "C" {
 };
 
 #define CLIENT_QUEUE_LEN    50
+#define SOCKET_RX_BUFFER_SIZE    1024
 
 using namespace std;
 namespace server {
@@ -45,7 +46,7 @@ namespace server {
                 SOCKET_CLIENT_DISCONNECTED,
             };
 
-        private:
+        public:
             class SockInfo {
                 private:
                     SocketEvent event;
@@ -53,17 +54,22 @@ namespace server {
                     bool threadRunning;
                     pthread_mutex_t threadLock;
                     pthread_t workerThread;
+                    SocketServer *sockServer;
 
                 public :
                     int fd;
-                    SocketServer *sockServer;
                     struct sockaddr sockAddr;
                     char name[sizeof(struct sockaddr_un) - sizeof(struct sockaddr)];
+                    char buffer[SOCKET_RX_BUFFER_SIZE];
+                    unsigned short rxDataLen;
+
                 public:
                     SockInfo(void);
                     ~SockInfo(void);
 
-                    void raiseEvent(SocketServer *aSocketServer, int aFileDesc, SocketEvent aEvent);
+                    void raiseEvent(SocketServer *aSocketServer, SocketEvent aEvent);
+                    void AcquireLock(void);
+                    void ReleaseLock(void);
 
                 private:
                     void handleEvent(void);
@@ -88,7 +94,7 @@ namespace server {
             struct sockaddr GetSocketAddress(int aFileDesc);
 
         protected:
-            virtual void eventHandler(SocketEvent aSocketEvent, int aFileDesc);
+            virtual void eventHandler(SocketEvent aSocketEvent, SockInfo &aSockInfo);
 
         private:
             static void *serviceThread(void *arg);

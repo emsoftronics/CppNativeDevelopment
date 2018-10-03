@@ -28,6 +28,8 @@ typedef int (*t_TestCaseCallback)(void);
 
 extern int SQLiteCppTest(void);
 
+extern int testLocalSocketServer(void);
+
 
 static map<string, t_TestCaseCallback> g_HashMapTestCaseCallbackList;
 
@@ -37,10 +39,9 @@ static int TestSQLiteCpp(void)
     return SQLiteCppTest();
 }
 
-static int Test2(void)
+static int TestUnixSocketServer(void)
 {
-    cout << "calling "<<__func__<<"\n";
-    return 0;
+    return testLocalSocketServer();
 }
 
 static int hello(void)
@@ -53,7 +54,7 @@ static int hello(void)
 static void InitTestCaseList(void)
 {
     ADD_TEST_CASE(TestSQLiteCpp);
-    ADD_TEST_CASE(Test2);
+    ADD_TEST_CASE(TestUnixSocketServer);
     ADD_TEST_CASE(hello);
 }
 

@@ -20,23 +20,24 @@
 #include <cstring>
 #include <cstdio>
 extern "C" {
-//#include <sys/poll.h>
+    //#include <sys/poll.h>
 #include <linux/types.h>
-//#include <sys/un.h>
-//#include <netinet/in.h>
+    //#include <sys/un.h>
+    //#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
 };
 
 #define PRINT_ERROR(tag)   printf("[SocketServer::%s] : " #tag " ERROR : %s\n", __func__, strerror(errno))
 #define PRINT_ERROR_MESSAGE(tag, msg)   printf("[SocketServer::%s] : " #tag " ERROR : %s\n", __func__, msg)
+#define PRINT_INFO(format, arg...)      printf("[SocketServer] : " format "\n", ##arg)
 using namespace server;
 
 SocketServer::SockInfo::SockInfo(void) : event(SOCKET_DATA_BUFFERED),
-        threadJoined(true), threadRunning(false) {
-    sockServer = NULL;
-    pthread_mutex_init(&threadLock, NULL);
-}
+    threadJoined(true), threadRunning(false) {
+        sockServer = NULL;
+        pthread_mutex_init(&threadLock, NULL);
+    }
 
 SocketServer::SockInfo::~SockInfo(void)
 {
@@ -54,13 +55,13 @@ SocketServer::SockInfo::~SockInfo(void)
     pthread_mutex_destroy(&threadLock);
 }
 
-void SocketServer::SockInfo::raiseEvent(SocketServer *aSocketServer,int aFileDesc, SocketEvent aEvent) {
+void SocketServer::SockInfo::raiseEvent(SocketServer *aSocketServer, SocketEvent aEvent) {
     void *threadstatus;
     bool runningstatus = false;
     int threadJoinedFlag = true;
     pthread_mutex_lock(&threadLock);
     runningstatus = threadRunning;
-    fd = aFileDesc;
+    //fd = aFileDesc;
     event = aEvent;
     threadJoinedFlag = threadJoined;
     sockServer = aSocketServer;
@@ -83,10 +84,20 @@ void SocketServer::SockInfo::raiseEvent(SocketServer *aSocketServer,int aFileDes
     }
 }
 
+void SocketServer::SockInfo::AcquireLock(void)
+{
+    pthread_mutex_lock(&threadLock);
+}
+
+void SocketServer::SockInfo::ReleaseLock(void)
+{
+    pthread_mutex_unlock(&threadLock);
+}
+
 void SocketServer::SockInfo::handleEvent(void)
 {
     if (sockServer)
-        sockServer->eventHandler(event,fd);
+        sockServer->eventHandler(event,*this);
 }
 
 void *SocketServer::SockInfo::eventThread(void *arg)
@@ -109,7 +120,7 @@ SocketServer::SocketServer(bool aNetLinkPidAsCurrentPid, int aNetlinkGroups /* =
 {
     mRunning = false;
     mThreadJoined = true;
-    if (sem_init(&mSem, 0, 0) < -1) PRINT_ERROR(sem_init);
+    if (sem_init(&mSem, 0, 1) < -1) PRINT_ERROR(sem_init);
     pthread_mutex_init(&mThreadMutex, NULL);
 
     struct sockaddr_nl *sa = NULL;
@@ -131,7 +142,7 @@ SocketServer::SocketServer(unsigned short aListeningNwPort, int aCommType /* = S
 {
     mRunning = false;
     mThreadJoined = true;
-    if (sem_init(&mSem, 0, 0) < -1) PRINT_ERROR(sem_init);
+    if (sem_init(&mSem, 0, 1) < -1) PRINT_ERROR(sem_init);
     pthread_mutex_init(&mThreadMutex, NULL);
 
     if (aProtocol == IPPROTO_IP) {
@@ -168,7 +179,7 @@ SocketServer::SocketServer(const char *aLocalSocketName, int aCommType /* = SOCK
 {
     mRunning = false;
     mThreadJoined = true;
-    if (sem_init(&mSem, 0, 0) < -1) PRINT_ERROR(sem_init);
+    if (sem_init(&mSem, 0, 1) < -1) PRINT_ERROR(sem_init);
     pthread_mutex_init(&mThreadMutex, NULL);
 
     struct sockaddr_un *sa = NULL;
@@ -240,17 +251,23 @@ int SocketServer::start(void)
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
     mRunning = true;
     if (pthread_create(&mListeningThread, &attr, serviceThread, this) < 0) {
-            PRINT_ERROR_MESSAGE(pthread_create,"Thread Creation failed!!");
-            close(mSocketFd);
-            mSocketFd = -1;
-            mRunning = false;
+        PRINT_ERROR_MESSAGE(pthread_create,"Thread Creation failed!!");
+        close(mSocketFd);
+        mSocketFd = -1;
+        mRunning = false;
     }
     else {
         SockInfo &si = mFdList[mSocketFd];
         memcpy(&(si.sockAddr), mSockAddr, mAddrLen);
+        si.fd = mSocketFd;
+        si.rxDataLen = 0;
         if ((mSocketType == AF_INET)
                 || (mSocketType == AF_INET6)) gethostname(si.name, sizeof(si.name));
-        si.raiseEvent(this, mSocketFd, SocketServer::SOCKET_STARTED);
+        si.raiseEvent(this, SocketServer::SOCKET_STARTED);
+
+        printf("SockAddr : \n");
+        write(1,&si.sockAddr,sizeof(struct sockaddr_un));
+        printf("\n\n");
     }
 
     pthread_attr_destroy(&attr);
@@ -290,7 +307,16 @@ void SocketServer::stop(void)
 
     if(!mThreadJoined) pthread_join(mListeningThread, &status);
 
+    SockInfo &si = mFdList[mSocketFd];
+    si.raiseEvent(this, SocketServer::SOCKET_STOPPED);
+    /*for (std::map<int,SockInfo>::iterator it=mFdList.begin();
+                                it!=mFdList.end(); ++it) {
+        if ((int)it->first != mSocketFd) close((int)it->first);
+    } */
     pthread_mutex_lock(&mThreadMutex);
+    /* clear the socket set */
+    FD_ZERO(&mReadfds);
+    mFdList.clear();
     mThreadJoined = true;
     close(mSocketFd);
     mSocketFd = -1;
@@ -330,15 +356,92 @@ bool SocketServer::isPaused(void)
 }
 
 void *SocketServer::serviceThread(void *arg) {
+    printf("SocketServer::serviceThread just entered...\n");
     SocketServer *sockServer = (SocketServer *)arg;
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_mutex_lock(&sockServer->mThreadMutex);
     sockServer->mThreadJoined = false;
     pthread_mutex_unlock(&sockServer->mThreadMutex);
+    printf("SocketServer::serviceThread started...\n");
+    /* clear the socket set */
+    FD_ZERO(&sockServer->mReadfds);
 
+    /* add master socket to set */
+    FD_SET(sockServer->mSocketFd, &sockServer->mReadfds);
+
+    int maxSockFd = sockServer->mSocketFd;
+    int activity = -1;
+    int ret = 0;
+    struct timeval tv = {0, 10000L /* 10ms */};
+    printf("maxSockFd: %d\n", maxSockFd);
     while(sockServer->isRunning()) {
+        /* wait for an activity on one of the sockets , timeout is 10ms , so wait indefinitely */
+     //   printf("wait for event\n");
+        activity = select(maxSockFd + 1 , &sockServer->mReadfds , NULL , NULL , &tv);
+        if ((activity < 0) && (errno!=EINTR))
+        {
+            PRINT_ERROR(select);
+        }
+
+        if (activity <= 0) {
+     //       printf("Wait for event timed out!!\n");
+            continue;
+        }
+        else {
+            printf("Some thing happend\n");
+        }
+
+        for ( const auto &fdRecord : sockServer->mFdList ) {
+            if (FD_ISSET((int)fdRecord.first, &sockServer->mReadfds)) {
+                if (((int)fdRecord.first == sockServer->mSocketFd) && (sockServer->mSocketType != AF_NETLINK)) {
+                    /* If something happened on the master socket , then its an incoming connection */
+                    struct sockaddr tmpSockAddr;
+                    int clientSocket = -1;
+                    socklen_t tmpAddrLen = sizeof(tmpSockAddr);
+                    if ((clientSocket = accept(sockServer->mSocketFd, &tmpSockAddr, &tmpAddrLen)) < 0)
+                    {
+                        PRINT_ERROR(accept);
+                    }
+                    else {
+                        SockInfo &si = sockServer->mFdList[clientSocket];
+                        memcpy(&(si.sockAddr), &tmpSockAddr, tmpAddrLen);
+                        si.fd = clientSocket;
+                        si.rxDataLen = 0;
+                        si.raiseEvent(sockServer, SocketServer::SOCKET_CLIENT_CONNECTED);
+                        /* add client socket to select file descriptor list */
+                        FD_SET(clientSocket, &sockServer->mReadfds);
+                        if (clientSocket > maxSockFd) maxSockFd = clientSocket;
+                        break;
+                    }
+                }
+                else {
+                    SockInfo &si = sockServer->mFdList[(int)fdRecord.first];
+                    /* Check if it was for closing , and also read the incoming message */
+                    si.AcquireLock();
+                    ret = si.rxDataLen = read(si.fd, si.buffer, sizeof(si.buffer)-1);
+                    if (ret >= 0) si.buffer[ret] = '\0';
+                    si.ReleaseLock();
+                    if (ret <= 0) {
+                        si.raiseEvent(sockServer, SocketServer::SOCKET_CLIENT_DISCONNECTED);
+                        close(si.fd);
+                        /* remove client socket from select file descriptor list */
+                        FD_CLR(si.fd, &sockServer->mReadfds);
+                        sockServer->mFdList.erase(si.fd);
+                        for (std::map<int,SockInfo>::iterator it=sockServer->mFdList.begin();
+                                it!=sockServer->mFdList.end(); ++it) {
+                            if ((int)it->first > maxSockFd)maxSockFd = (int)it->first;
+                        }
+                        break;
+                    }
+                    else {
+                        si.raiseEvent(sockServer, SocketServer::SOCKET_DATA_BUFFERED);
+                    }
+                }
+            }
+        }
     }
 
+    printf("SocketServer::serverThread exiting\n");
     pthread_mutex_lock(&sockServer->mThreadMutex);
     sockServer->mRunning = false;
     pthread_mutex_unlock(&sockServer->mThreadMutex);
@@ -359,6 +462,20 @@ bool SocketServer::catchPauseAndResumeEvents(void)
     return ret;
 }
 
-void SocketServer::eventHandler(SocketServer::SocketEvent aSocketEvent, int aFileDesc) {
-
+void SocketServer::eventHandler(SocketServer::SocketEvent aSocketEvent, SockInfo &aSockInfo) {
+    switch (aSocketEvent) {
+        case SocketServer::SOCKET_STARTED: PRINT_INFO("Captured Socket Event is : SOCKET_STARTED");
+                                           break;
+        case SocketServer::SOCKET_STOPPED: PRINT_INFO("Captured Socket Event is : SOCKET_STOPPED");
+                                           break;
+        case SocketServer::SOCKET_CLIENT_CONNECTED: PRINT_INFO("Captured Socket Event is : SOCKET_CLIENT_CONNECTED");
+                                                    break;
+        case SocketServer::SOCKET_CLIENT_DISCONNECTED: PRINT_INFO("Captured Socket Event is : SOCKET_CLIENT_DISCONNECTED");
+                                                       break;
+        case SocketServer::SOCKET_DATA_BUFFERED: PRINT_INFO("Captured Socket Event is : SOCKET_DATA_BUFFERED");
+                                                 aSockInfo.AcquireLock();
+                                                 PRINT_INFO("Data Received: %s", aSockInfo.buffer);
+                                                 aSockInfo.ReleaseLock();
+                                                 break;
+    }
 }
